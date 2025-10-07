@@ -2,6 +2,16 @@
 
 ## ✨ Key Features
 
+### ⚡ Inline Terminal Command Execution (NEW!)
+- Automatic detection of executable commands in responses
+- Safety analysis with three danger levels (Safe, Warning, Dangerous)
+- User confirmation required before execution
+- Real-time command output display
+- Exit code tracking
+- Pattern-based dangerous command detection
+- Blocks destructive operations (rm -rf /, fork bombs, etc.)
+- Supports bash, sh, zsh, and terminal code blocks
+
 ### 🎯 Spotlight-Style Interface
 - Floating window that appears on demand
 - Clean, minimal design inspired by macOS Spotlight
@@ -44,12 +54,16 @@
 ## 🔮 Planned Features
 
 ### Version 2.0
+- [x] Inline terminal command execution
+- [x] Command safety analysis
 - [ ] Multiple conversation tabs
 - [ ] Save conversation history
 - [ ] Export chat to markdown/text
 - [ ] Custom keyboard shortcut configuration
 - [ ] Multiple Claude model selection
 - [ ] Token usage tracking
+- [ ] Command history and favorites
+- [ ] Custom dangerous pattern configuration
 
 ### Version 2.1
 - [ ] Code syntax highlighting

@@ -54,12 +54,12 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(viewModel.messages) { message in
-                            MessageBubble(message: message)
+                            MessageBubble(message: message, viewModel: viewModel)
                         }
                     }
                     .padding()
                 }
-                .frame(maxHeight: 400)
+                .frame(maxHeight: 500)
             }
         }
         .frame(width: 600)
@@ -75,9 +75,12 @@ struct ContentView: View {
 
 struct MessageBubble: View {
     let message: ChatMessage
+    @ObservedObject var viewModel: ClaudeViewModel
+    @State private var showCommandConfirmation = false
+    @State private var selectedCommand: ExecutableCommand?
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(message.role == .user ? "You" : "Claude")
                 .font(.caption)
                 .fontWeight(.semibold)
@@ -93,7 +96,109 @@ struct MessageBubble: View {
                         : Color.purple.opacity(0.1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+            
+            if !message.executableCommands.isEmpty && message.role == .assistant {
+                ForEach(message.executableCommands) { command in
+                    CommandExecutionView(
+                        command: command,
+                        onExecute: {
+                            selectedCommand = command
+                            showCommandConfirmation = true
+                        }
+                    )
+                }
+            }
         }
+        .alert("Execute Command?", isPresented: $showCommandConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Execute", role: .destructive) {
+                if let cmd = selectedCommand {
+                    viewModel.executeCommand(cmd, messageId: message.id)
+                }
+            }
+        } message: {
+            if let cmd = selectedCommand {
+                let dangerLevel = CommandExecutor.shared.analyzeDangerLevel(cmd.command)
+                Text("\(CommandExecutor.shared.getDangerWarningMessage(dangerLevel))\n\nCommand: \(cmd.command)")
+            }
+        }
+    }
+}
+
+struct CommandExecutionView: View {
+    let command: ExecutableCommand
+    let onExecute: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "terminal")
+                    .font(.caption)
+                Text(command.language.uppercased())
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                let dangerLevel = CommandExecutor.shared.analyzeDangerLevel(command.command)
+                Image(systemName: dangerLevel.icon)
+                    .font(.caption)
+                    .foregroundColor(dangerLevel == .safe ? .green : dangerLevel == .warning ? .orange : .red)
+                
+                if command.isExecuting {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                } else if command.output != nil {
+                    Image(systemName: command.exitCode == 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundColor(command.exitCode == 0 ? .green : .red)
+                        .font(.caption)
+                } else {
+                    Button("Run") {
+                        onExecute()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+            
+            Text(command.command)
+                .font(.system(size: 12, design: .monospaced))
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            
+            if let output = command.output {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "arrow.right")
+                            .font(.caption2)
+                        Text("Output:")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        if let exitCode = command.exitCode {
+                            Text("(exit code: \(exitCode))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        Text(output)
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 150)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.gray.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

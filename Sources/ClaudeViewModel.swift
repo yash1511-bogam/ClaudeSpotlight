@@ -25,6 +25,7 @@ struct ChatMessage: Identifiable {
     let id = UUID()
     let role: MessageRole
     let content: String
+    var executableCommands: [ExecutableCommand] = []
 }
 
 class AppState: ObservableObject {
@@ -52,8 +53,10 @@ class ClaudeViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var messages: [ChatMessage] = []
     @Published var currentProvider: ClaudeProvider
+    @Published var commandExecutionEnabled = true
     
     private var anthropicService: AnthropicService?
+    private let commandExecutor = CommandExecutor.shared
     
     init(provider: ClaudeProvider = .anthropic) {
         self.currentProvider = provider
@@ -82,10 +85,33 @@ class ClaudeViewModel: ObservableObject {
         Task {
             let result = await anthropicService?.sendMessage(userMessage)
             if let result = result {
-                messages.append(ChatMessage(role: .assistant, content: result))
+                let commands = commandExecutor.extractCommands(from: result)
+                var message = ChatMessage(role: .assistant, content: result)
+                message.executableCommands = commands
+                messages.append(message)
                 response = result
             }
             isLoading = false
+        }
+    }
+    
+    func executeCommand(_ command: ExecutableCommand, messageId: UUID) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        guard let commandIndex = messages[messageIndex].executableCommands.firstIndex(where: { $0.id == command.id }) else { return }
+        
+        messages[messageIndex].executableCommands[commandIndex].isExecuting = true
+        
+        commandExecutor.execute(command.command) { [weak self] output, exitCode in
+            guard let self = self else { return }
+            
+            Task { @MainActor in
+                if let msgIndex = self.messages.firstIndex(where: { $0.id == messageId }),
+                   let cmdIndex = self.messages[msgIndex].executableCommands.firstIndex(where: { $0.id == command.id }) {
+                    self.messages[msgIndex].executableCommands[cmdIndex].isExecuting = false
+                    self.messages[msgIndex].executableCommands[cmdIndex].output = output
+                    self.messages[msgIndex].executableCommands[cmdIndex].exitCode = Int(exitCode)
+                }
+            }
         }
     }
     

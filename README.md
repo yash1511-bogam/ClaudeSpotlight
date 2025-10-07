@@ -11,6 +11,9 @@ A Mac app that brings Claude Code to your desktop with a Spotlight-like interfac
 - 💬 Streaming responses for real-time interaction
 - 🎨 Beautiful native macOS design with blur effects
 - 🔄 Easy provider switching with dropdown menu
+- ⚡ **NEW**: Inline terminal command execution with safety checks
+- 🛡️ **Security**: Danger level detection and confirmation dialogs
+- 📊 Command output display with exit codes
 
 ## Requirements
 
@@ -61,6 +64,23 @@ swift build -c release
 4. Type your question or code request
 5. Press Enter to send to Claude
 6. View streaming responses in real-time
+
+### 🔥 NEW: Command Execution
+
+When Claude suggests terminal commands (in bash/sh/zsh code blocks), they appear as executable:
+
+1. **Review** the command and danger level indicator (🟢 Safe, 🟡 Warning, 🔴 Dangerous)
+2. **Click "Run"** to execute
+3. **Confirm** in the security dialog
+4. **View output** inline with exit code
+
+**Safety Features**:
+- ✅ No auto-execution - all commands require confirmation
+- ✅ Danger level analysis with visual warnings
+- ✅ Blocks known dangerous patterns (rm -rf /, fork bombs, etc.)
+- ✅ Shows full command in confirmation dialog
+
+See [SECURITY.md](SECURITY.md) for security details.
 
 ## Keyboard Shortcuts
 
