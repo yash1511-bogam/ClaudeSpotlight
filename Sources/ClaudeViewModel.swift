@@ -129,7 +129,7 @@ class ClaudeViewModel: ObservableObject {
 
 class AnthropicService {
     private let provider: ClaudeProvider
-    private var anthropicClient: AnthropicServiceProtocol?
+    private var anthropicClient: SwiftAnthropic.AnthropicService?
     private var isConfigured: Bool = false
     
     init(provider: ClaudeProvider) {
@@ -138,7 +138,7 @@ class AnthropicService {
         switch provider {
         case .anthropic:
             if let apiKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] {
-                self.anthropicClient = AnthropicServiceFactory.service(apiKey: apiKey)
+                self.anthropicClient = AnthropicServiceFactory.service(apiKey: apiKey, betaHeaders: nil)
                 self.isConfigured = true
                 print("✅ Anthropic Direct API configured")
             } else {
@@ -213,10 +213,10 @@ class AnthropicService {
         }
     }
     
-    private func sendAnthropicMessage(_ message: String, client: AnthropicServiceProtocol) async -> String {
+    private func sendAnthropicMessage(_ message: String, client: SwiftAnthropic.AnthropicService) async -> String {
         do {
             let parameters = MessageParameter(
-                model: .claude3_5_Sonnet,
+                model: .claude35Sonnet,
                 messages: [.init(role: .user, content: .text(message))],
                 maxTokens: 4096
             )
@@ -225,13 +225,8 @@ class AnthropicService {
             var fullResponse = ""
             
             for try await chunk in stream {
-                switch chunk.type {
-                case .contentBlockDelta:
-                    if let delta = chunk.delta, case .text(let text) = delta {
-                        fullResponse += text
-                    }
-                default:
-                    break
+                if chunk.type == "content_block_delta", let delta = chunk.delta, let text = delta.text {
+                    fullResponse += text
                 }
             }
             

@@ -13,7 +13,8 @@ let package = Package(
         .executableTarget(
             name: "ClaudeSpotlight",
             dependencies: ["SwiftAnthropic"],
-            path: "Sources"
+            path: "Sources",
+            exclude: ["Info.plist"]
         )
     ]
 )
