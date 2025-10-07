@@ -2,14 +2,35 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = ClaudeViewModel()
+    @StateObject private var appState = AppState()
     @FocusState private var isInputFocused: Bool
+    @State private var showProviderMenu = false
     
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Image(systemName: "brain.head.profile")
-                    .font(.title2)
-                    .foregroundColor(.purple)
+                Menu {
+                    ForEach(ClaudeProvider.allCases, id: \.self) { provider in
+                        Button {
+                            appState.selectedProvider = provider
+                            viewModel.updateProvider(provider)
+                        } label: {
+                            HStack {
+                                Image(systemName: provider.icon)
+                                Text(provider.rawValue)
+                                if appState.selectedProvider == provider {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: appState.selectedProvider.icon)
+                        .font(.title2)
+                        .foregroundColor(.purple)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 30)
                 
                 TextField("Ask Claude Code...", text: $viewModel.inputText)
                     .textFieldStyle(.plain)
@@ -47,6 +68,7 @@ struct ContentView: View {
         .shadow(radius: 20)
         .onAppear {
             isInputFocused = true
+            viewModel.updateProvider(appState.selectedProvider)
         }
     }
 }

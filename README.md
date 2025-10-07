@@ -5,19 +5,25 @@ A Mac app that brings Claude Code to your desktop with a Spotlight-like interfac
 ## Features
 
 - 🎯 Spotlight-style floating window interface
-- 🧠 Powered by Claude 3.5 Sonnet via Anthropic API
+- 🧠 Multiple Claude providers: Anthropic Direct, Vertex AI, AWS Bedrock
 - ⌨️ Global keyboard shortcut (⌘⇧Space)
 - 🚀 Launch at login support
 - 💬 Streaming responses for real-time interaction
 - 🎨 Beautiful native macOS design with blur effects
+- 🔄 Easy provider switching with dropdown menu
 
 ## Requirements
 
 - macOS 13.0 or later
 - Xcode 15.0 or later
-- Anthropic API key
+- API key/credentials for chosen provider:
+  - Anthropic Direct: API key
+  - Vertex AI: GCP project credentials
+  - AWS Bedrock: AWS credentials
 
 ## Setup
+
+### Quick Start (Anthropic Direct - Recommended)
 
 1. Get your Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
 
@@ -36,6 +42,10 @@ A Mac app that brings Claude Code to your desktop with a Spotlight-like interfac
    - Select "ClaudeSpotlight" scheme
    - Build and run (⌘R)
 
+### Alternative Providers
+
+For **Vertex AI** or **AWS Bedrock** setup, see [PROVIDER_SETUP.md](PROVIDER_SETUP.md)
+
 ## Building from Command Line
 
 ```bash
@@ -45,11 +55,12 @@ swift build -c release
 
 ## Usage
 
-1. Launch the app - it will appear in your menu bar with a brain icon
+1. Launch the app - it will appear in your menu bar with a provider icon
 2. Click the menu bar icon or press **⌘⇧Space** to open the search window
-3. Type your question or code request
-4. Press Enter to send to Claude
-5. View streaming responses in real-time
+3. (Optional) Click the provider icon to switch between Anthropic/Vertex/Bedrock
+4. Type your question or code request
+5. Press Enter to send to Claude
+6. View streaming responses in real-time
 
 ## Keyboard Shortcuts
 
