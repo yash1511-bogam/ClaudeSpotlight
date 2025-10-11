@@ -1,0 +1,155 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ "master", "main" ]
+
+jobs:
+  validate-pr:
+    name: Validate Pull Request
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      
+      - name: Check for merge conflicts
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          if git merge-tree $(git merge-base HEAD origin/${{ github.base_ref }}) HEAD origin/${{ github.base_ref }} | grep -q "^<<<<<"; then
+            echo "❌ Merge conflicts detected!"
+            exit 1
+          else
+            echo "✅ No merge conflicts detected"
+          fi
+      
+      - name: Validate Swift files
+        run: |
+          echo "Checking Swift syntax..."
+          for file in $(find Sources -name "*.swift"); do
+            echo "Validating $file"
+            swift -frontend -parse "$file" -verify
+          done
+      
+      - name: Check Package.swift
+        run: |
+          swift package dump-package
+      
+      - name: Build and verify
+        run: |
+          swift build
+      
+      - name: Check for sensitive data
+        run: |
+          echo "Scanning for potential secrets..."
+          if grep -r -i -E "(api[_-]?key|secret|password|token|credential|auth)" Sources --include="*.swift" | grep -v "// "; then
+            echo "⚠️  Warning: Found potential sensitive data references in code"
+            echo "Please review the above matches to ensure no secrets are committed"
+          else
+            echo "✅ No obvious sensitive data patterns found"
+          fi
+        continue-on-error: true
+      
+      - name: Verify build script
+        run: |
+          chmod +x build-app.sh
+          ./build-app.sh
+          
+          # Verify the app was created
+          if [ ! -d ".build/ClaudeSpotlight.app" ]; then
+            echo "❌ App bundle was not created!"
+            exit 1
+          fi
+          
+          # Verify executable exists
+          if [ ! -f ".build/ClaudeSpotlight.app/Contents/MacOS/ClaudeSpotlight" ]; then
+            echo "❌ Executable not found in app bundle!"
+            exit 1
+          fi
+          
+          echo "✅ App bundle created successfully"
+      
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        if: success()
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const comment = `## ✅ PR Checks Passed
+            
+            All automated checks have passed successfully:
+            - ✅ No merge conflicts
+            - ✅ Swift syntax validation passed
+            - ✅ Package.swift is valid
+            - ✅ Build successful
+            - ✅ .app bundle created successfully
+            
+            The changes are ready for review!`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  size-check:
+    name: Check Binary Size
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      
+      - name: Build and check size
+        run: |
+          swift build -c release
+          
+          # Find the executable
+          if [ -f ".build/release/ClaudeSpotlight" ]; then
+            EXEC_PATH=".build/release/ClaudeSpotlight"
+          elif [ -f ".build/arm64-apple-macosx/release/ClaudeSpotlight" ]; then
+            EXEC_PATH=".build/arm64-apple-macosx/release/ClaudeSpotlight"
+          else
+            echo "❌ Could not find executable"
+            exit 1
+          fi
+          
+          SIZE=$(du -h "$EXEC_PATH" | cut -f1)
+          SIZE_BYTES=$(stat -f%z "$EXEC_PATH")
+          SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+          
+          echo "Binary size: $SIZE ($SIZE_MB MB)"
+          echo "SIZE=$SIZE" >> $GITHUB_ENV
+          echo "SIZE_MB=$SIZE_MB" >> $GITHUB_ENV
+      
+      - name: Comment size on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const comment = `## 📦 Binary Size Report
+            
+            **Release Binary Size:** ${{ env.SIZE }} (${{ env.SIZE_MB }} MB)
+            
+            ℹ️ This is the size of the compiled executable before packaging into .app bundle.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

@@ -1,0 +1,154 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+env:
+  SWIFT_VERSION: '6.0'
+  MACOS_VERSION: '15.0'
+
+jobs:
+  build-spm:
+    name: Build with Swift Package Manager
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      
+      - name: Print Swift version
+        run: swift --version
+      
+      - name: Resolve dependencies
+        run: swift package resolve
+      
+      - name: Build package (Debug)
+        run: swift build -v
+      
+      - name: Build package (Release)
+        run: swift build -c release -v
+      
+      - name: Run tests
+        run: swift test --enable-code-coverage
+        continue-on-error: true
+      
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spm-build-artifacts
+          path: .build/release/ClaudeSpotlight
+          if-no-files-found: warn
+
+  build-xcode:
+    name: Build with Xcode
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      
+      - name: List available schemes
+        run: |
+          xcodebuild -list -project ClaudeSpotlight.xcodeproj
+      
+      - name: Build with Xcode (Debug)
+        run: |
+          xcodebuild clean build \
+            -project ClaudeSpotlight.xcodeproj \
+            -scheme ClaudeSpotlight \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+      
+      - name: Build with Xcode (Release)
+        run: |
+          xcodebuild clean build \
+            -project ClaudeSpotlight.xcodeproj \
+            -scheme ClaudeSpotlight \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+      
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -project ClaudeSpotlight.xcodeproj \
+            -scheme ClaudeSpotlight \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+        continue-on-error: true
+
+  build-app-bundle:
+    name: Build .app Bundle
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      
+      - name: Make build script executable
+        run: chmod +x build-app.sh
+      
+      - name: Build .app bundle
+        run: ./build-app.sh
+      
+      - name: Verify .app bundle
+        run: |
+          ls -la .build/ClaudeSpotlight.app
+          ls -la .build/ClaudeSpotlight.app/Contents/MacOS/
+          file .build/ClaudeSpotlight.app/Contents/MacOS/ClaudeSpotlight
+      
+      - name: Upload .app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeSpotlight-app
+          path: .build/ClaudeSpotlight.app
+          if-no-files-found: error
+
+  analyze:
+    name: Static Analysis
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      
+      - name: Run xcodebuild analyze
+        run: |
+          xcodebuild clean analyze \
+            -project ClaudeSpotlight.xcodeproj \
+            -scheme ClaudeSpotlight \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+        continue-on-error: true

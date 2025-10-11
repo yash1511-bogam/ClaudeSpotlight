@@ -1,0 +1,134 @@
+name: Release - Build and Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  SWIFT_VERSION: '6.0'
+
+jobs:
+  build-release:
+    name: Build Release .app Bundle
+    runs-on: macos-15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update version in Info.plist
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION_NUMBER="${VERSION#v}"
+          echo "Building version: $VERSION_NUMBER"
+          
+          # Update build-app.sh to use the correct version
+          sed -i '' "s/CFBundleShortVersionString>.*</CFBundleShortVersionString>$VERSION_NUMBER</" build-app.sh
+      
+      - name: Build .app bundle
+        run: |
+          chmod +x build-app.sh
+          ./build-app.sh
+      
+      - name: Create DMG
+        run: |
+          # Create a temporary directory for DMG contents
+          mkdir -p dmg-temp
+          cp -r .build/ClaudeSpotlight.app dmg-temp/
+          
+          # Create Applications symlink
+          ln -s /Applications dmg-temp/Applications
+          
+          # Create DMG
+          hdiutil create -volname "ClaudeSpotlight" \
+            -srcfolder dmg-temp \
+            -ov -format UDZO \
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg
+      
+      - name: Create ZIP archive
+        run: |
+          cd .build
+          zip -r ../ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip ClaudeSpotlight.app
+          cd ..
+      
+      - name: Generate checksums
+        run: |
+          shasum -a 256 ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg > checksums.txt
+          shasum -a 256 ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip >> checksums.txt
+      
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip
+            checksums.txt
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip
+            checksums.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## ClaudeSpotlight ${{ steps.version.outputs.VERSION }}
+            
+            ### Installation
+            
+            **Option 1: DMG (Recommended)**
+            1. Download `ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg`
+            2. Open the DMG file
+            3. Drag ClaudeSpotlight.app to Applications folder
+            4. Open from Applications folder
+            
+            **Option 2: ZIP**
+            1. Download `ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip`
+            2. Extract the zip file
+            3. Move ClaudeSpotlight.app to Applications folder
+            4. Open from Applications folder
+            
+            ### Setup
+            1. Set your Anthropic API key:
+               ```bash
+               export ANTHROPIC_API_KEY="your-api-key-here"
+               ```
+            2. Launch ClaudeSpotlight from Applications
+            3. Use **⌘⇧Space** to invoke the window
+            
+            ### Requirements
+            - macOS 15.0 (Sequoia) or later
+            - Anthropic API key
+            
+            ### Checksums
+            See `checksums.txt` for SHA-256 checksums of all artifacts.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
