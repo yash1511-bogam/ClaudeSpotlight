@@ -31,6 +31,7 @@ enum CommandDangerLevel {
     }
 }
 
+@MainActor
 class CommandExecutor {
     static let shared = CommandExecutor()
     

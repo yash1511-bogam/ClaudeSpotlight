@@ -1,27 +1,59 @@
 # Claude Spotlight
 
-A Mac app that brings Claude Code to your desktop with a Spotlight-like interface.
+A native macOS app that brings Claude AI to your desktop with an authentic Spotlight-like interface, built with the latest macOS technologies.
 
-## Features
+## 🎉 What's New (Latest Update)
 
-- 🎯 Spotlight-style floating window interface
-- 🧠 Multiple Claude providers: Anthropic Direct, Vertex AI, AWS Bedrock
-- ⌨️ Global keyboard shortcut (⌘⇧Space)
-- 🚀 Launch at login support
-- 💬 Streaming responses for real-time interaction
-- 🎨 Beautiful native macOS design with blur effects
-- 🔄 Easy provider switching with dropdown menu
-- ⚡ **NEW**: Inline terminal command execution with safety checks
-- 🛡️ **Security**: Danger level detection and confirmation dialogs
-- 📊 Command output display with exit codes
+### Major Enhancements
+- ✨ **Complete UI Overhaul** - Redesigned with Apple's latest HIG for macOS Sequoia
+- 🪟 **True Spotlight Experience** - Window now appears centered at top of screen, just like native Spotlight
+- 🎨 **Modern Materials** - Updated to use ultra-thin material blur effects
+- 📱 **Enhanced Design** - Refined spacing, borders, and SF Symbols throughout
+- ⌨️ **Better Shortcuts** - Escape key support and improved keyboard handling
+- 🚀 **macOS 15+ SDK** - Built with latest Swift 6.0 and macOS Sequoia SDK
+- 🏗️ **Architecture Update** - Migrated from NSPopover to custom NSPanel for authentic behavior
+- 🔐 **Concurrency Safety** - Full Swift 6 concurrency support with @MainActor
 
-## Requirements
+### Technical Improvements
+- Replaced popover-based window with floating NSPanel
+- Positioned window programmatically at screen center-top
+- Updated Package.swift to Swift 6.0 tools version
+- Applied proper MainActor isolation for thread safety
+- Enhanced visual hierarchy with modern rounded corners and translucent effects
+- Improved message bubbles with icons and better contrast
 
-- macOS 13.0 or later
-- Xcode 15.0 or later
-- API key/credentials for chosen provider:
+## ✨ Features
+
+### Core Functionality
+- 🎯 **True Spotlight-Style Interface** - Floating window positioned center-top of screen, just like macOS Spotlight
+- 🪟 **Native macOS App** - Fully integrated with macOS, appears above all windows
+- 🧠 **Multiple Claude Providers** - Anthropic Direct, Vertex AI, AWS Bedrock
+- ⌨️ **Global Keyboard Shortcut** - Press **⌘⇧Space** anywhere to invoke (same as Spotlight)
+- 💬 **Streaming Responses** - Real-time interaction with Claude AI
+- 🚀 **Launch at Login** - Automatically starts with your Mac
+
+### Modern macOS Design
+- 🎨 **Apple HIG Compliant** - Follows Apple's Human Interface Guidelines for macOS Sequoia
+- ✨ **Ultra-Thin Material** - Modern translucent blur effects using latest macOS materials
+- 🖼️ **Dynamic Window** - Automatically expands when showing responses
+- 🎭 **Borderless Floating Panel** - Clean, distraction-free interface
+- 📱 **SF Symbols** - Native iconography throughout
+
+### Advanced Features  
+- ⚡ **Inline Terminal Command Execution** - Run suggested bash/shell commands safely
+- 🛡️ **Smart Security** - Multi-level danger detection (Safe/Warning/Dangerous)
+- 📊 **Live Command Output** - View execution results with exit codes
+- 🔄 **Easy Provider Switching** - Switch between AI providers on the fly
+- ⌨️ **Escape to Close** - Quick dismiss with Esc key
+
+## 📋 Requirements
+
+- **macOS 15.0 (Sequoia)** or later - Built with latest SDK
+- **Xcode 16.0** or later - Swift 6.0 support
+- **Apple Silicon or Intel Mac** - Universal support
+- **API credentials** for chosen provider:
   - Anthropic Direct: API key
-  - Vertex AI: GCP project credentials
+  - Vertex AI: GCP project credentials  
   - AWS Bedrock: AWS credentials
 
 ## Setup
@@ -107,12 +139,33 @@ ClaudeSpotlight/
 └── README.md
 ```
 
-## Technology Stack
+## 🏗️ Architecture & Technology
 
-- **SwiftUI** - Modern declarative UI framework
-- **SwiftAnthropic** - Anthropic API client for Swift
-- **ServiceManagement** - Launch at login functionality
-- **AppKit** - Native macOS window management
+### Modern macOS Technologies
+- **Swift 6.0** - Latest Swift with improved concurrency and safety
+- **SwiftUI** - Declarative UI framework for modern macOS apps
+- **AppKit Integration** - NSPanel for true Spotlight-like floating windows
+- **ServiceManagement** - Native launch at login support
+
+### Window System
+- **NSPanel** - Custom floating panel implementation
+- **Window Level: .floating** - Appears above all other windows
+- **Collection Behavior** - CanJoinAllSpaces + FullScreenAuxiliary
+- **Positioning** - Programmatically centered at top of screen
+- **Materials** - Ultra-thin material blur effects (macOS 15+)
+
+### API Integration
+- **SwiftAnthropic** - Official Anthropic API client for Swift
+- **Async/Await** - Modern Swift concurrency
+- **MainActor** - Proper UI thread safety
+- **Streaming Responses** - Real-time token-by-token output
+
+### Design System
+- **Apple HIG Compliant** - Following Human Interface Guidelines
+- **SF Symbols** - System iconography
+- **Dynamic Type** - Accessibility support
+- **Rounded Corners** - Modern 16px corner radius
+- **Translucent Materials** - Native blur and vibrancy effects
 
 ## Troubleshooting
 

@@ -4,7 +4,6 @@ import ServiceManagement
 @main
 struct ClaudeSpotlightApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var appState = AppState()
     
     var body: some Scene {
         Settings {
@@ -15,26 +14,34 @@ struct ClaudeSpotlightApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
-    var popover: NSPopover?
+    var floatingPanel: FloatingPanel?
     var eventMonitor: EventMonitor?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Run as accessory app (no dock icon)
         NSApplication.shared.setActivationPolicy(.accessory)
         
+        // Create menu bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "brain.head.profile", accessibilityDescription: "Claude Spotlight")
-            button.action = #selector(togglePopover)
+            button.action = #selector(togglePanel)
         }
         
-        popover = NSPopover()
-        popover?.contentViewController = NSHostingController(rootView: ContentView())
-        popover?.behavior = .transient
+        // Create floating panel
+        floatingPanel = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 80),
+                                     styleMask: [.borderless, .nonactivatingPanel],
+                                     backing: .buffered,
+                                     defer: false)
         
+        let contentView = ContentView()
+        floatingPanel?.contentViewController = NSHostingController(rootView: contentView)
+        
+        // Monitor clicks outside to close panel
         eventMonitor = EventMonitor(mask: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            if let popover = self?.popover, popover.isShown {
-                self?.closePopover()
+            if let panel = self?.floatingPanel, panel.isVisible {
+                self?.hidePanel()
             }
         }
         
@@ -42,39 +49,76 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         enableLaunchAtLogin()
     }
     
-    @objc func togglePopover() {
-        if let popover = popover {
-            if popover.isShown {
-                closePopover()
+    @MainActor
+    @objc func togglePanel() {
+        if let panel = floatingPanel {
+            if panel.isVisible {
+                hidePanel()
             } else {
-                showPopover()
+                showPanel()
             }
         }
     }
     
-    func showPopover() {
-        if let button = statusItem?.button, let popover = popover {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            eventMonitor?.start()
+    @MainActor
+    func showPanel() {
+        guard let panel = floatingPanel else { return }
+        
+        // Position panel at center-top of screen (Spotlight style)
+        if let screen = NSScreen.main {
+            let screenFrame = screen.visibleFrame
+            let panelWidth: CGFloat = 640
+            let panelHeight: CGFloat = 80
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                popover.contentViewController?.view.window?.makeKey()
-            }
+            // Center horizontally, position in upper third of screen
+            let xPosition = screenFrame.origin.x + (screenFrame.width - panelWidth) / 2
+            let yPosition = screenFrame.origin.y + screenFrame.height - panelHeight - 120
+            
+            panel.setFrame(NSRect(x: xPosition, y: yPosition, width: panelWidth, height: panelHeight), display: true)
         }
+        
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        
+        // Activate app to ensure key events work
+        NSApp.activate(ignoringOtherApps: true)
+        
+        eventMonitor?.start()
     }
     
-    func closePopover() {
-        popover?.performClose(nil)
+    @MainActor
+    func hidePanel() {
+        floatingPanel?.orderOut(nil)
         eventMonitor?.stop()
     }
     
     func setupGlobalKeyboardShortcut() {
-        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+        // Listen for Cmd+Shift+Space (like Spotlight)
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // Cmd+Shift+Space: keyCode 49 is Space
             if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 49 {
-                DispatchQueue.main.async {
-                    self.togglePopover()
+                Task { @MainActor [weak self] in
+                    self?.togglePanel()
                 }
             }
+        }
+        
+        // Also listen for local key events (when app is active)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.modifierFlags.contains([.command, .shift]) && event.keyCode == 49 {
+                Task { @MainActor [weak self] in
+                    self?.togglePanel()
+                }
+                return nil
+            }
+            // Escape key to close
+            if event.keyCode == 53 {
+                Task { @MainActor [weak self] in
+                    self?.hidePanel()
+                }
+                return nil
+            }
+            return event
         }
     }
     
@@ -82,6 +126,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if #available(macOS 13.0, *) {
             try? SMAppService.mainApp.register()
         }
+    }
+}
+
+// MARK: - Floating Panel (Spotlight-style)
+class FloatingPanel: NSPanel {
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+        
+        // Panel configuration for Spotlight-like behavior
+        self.level = .floating
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        self.isFloatingPanel = true
+        self.isMovableByWindowBackground = false
+        self.backgroundColor = .clear
+        self.isOpaque = false
+        self.hasShadow = true
+        self.titleVisibility = .hidden
+        self.titlebarAppearsTransparent = true
+        self.standardWindowButton(.closeButton)?.isHidden = true
+        self.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        self.standardWindowButton(.zoomButton)?.isHidden = true
+        
+        // Make panel accept key events
+        self.hidesOnDeactivate = false
+    }
+    
+    override var canBecomeKey: Bool {
+        return true
+    }
+    
+    override var canBecomeMain: Bool {
+        return true
     }
 }
 
