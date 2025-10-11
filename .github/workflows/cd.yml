@@ -9,6 +9,8 @@ on:
       - '**.md'
       - 'website/**'
       - '.github/workflows/pr-checks.yml'
+      - '.github/workflows/website-*.yml'
+      - 'vercel.json'
   workflow_dispatch:
 
 env:

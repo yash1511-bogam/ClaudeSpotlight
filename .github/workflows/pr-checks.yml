@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [ "master", "main" ]
+    paths-ignore:
+      - 'website/**'
+      - '**.md'
+      - '.github/workflows/website-*.yml'
 
 jobs:
   validate-pr:
