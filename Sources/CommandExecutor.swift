@@ -114,7 +114,7 @@ class CommandExecutor {
         return commands
     }
     
-    func execute(_ command: String, completion: @escaping (String, Int32) -> Void) {
+    func execute(_ command: String, completion: @escaping @Sendable (String, Int32) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             let outputPipe = Pipe()

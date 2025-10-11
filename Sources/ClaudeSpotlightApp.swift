@@ -12,6 +12,7 @@ struct ClaudeSpotlightApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var floatingPanel: FloatingPanel?

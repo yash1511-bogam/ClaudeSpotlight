@@ -81,7 +81,7 @@ struct ContentView: View {
             isInputFocused = true
             viewModel.updateProvider(appState.selectedProvider)
         }
-        .onChange(of: viewModel.response) { _ in
+        .onChange(of: viewModel.response) {
             // Expand window when response arrives
             if !viewModel.response.isEmpty {
                 if let window = NSApp.windows.first {

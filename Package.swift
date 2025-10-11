@@ -14,7 +14,7 @@ let package = Package(
             name: "ClaudeSpotlight",
             dependencies: ["SwiftAnthropic"],
             path: "Sources",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist", "ClaudeSpotlight.entitlements"]
         )
     ]
 )

@@ -72,20 +72,54 @@ A native macOS app that brings Claude AI to your desktop with an authentic Spotl
    echo 'export ANTHROPIC_API_KEY="your-api-key-here"' >> ~/.zshrc
    ```
 
-3. Build the app using Xcode:
-   - Open ClaudeSpotlight.xcodeproj in Xcode
-   - Select "ClaudeSpotlight" scheme
-   - Build and run (⌘R)
+3. Build the .app bundle:
+   ```bash
+   cd ClaudeSpotlight
+   ./build-app.sh
+   ```
+
+4. Run or install the app:
+   ```bash
+   # Run directly
+   open .build/ClaudeSpotlight.app
+   
+   # Or install to Applications folder
+   cp -r .build/ClaudeSpotlight.app /Applications/
+   ```
 
 ### Alternative Providers
 
 For **Vertex AI** or **AWS Bedrock** setup, see [PROVIDER_SETUP.md](PROVIDER_SETUP.md)
 
-## Building from Command Line
+## Building
+
+### Option 1: Build .app Bundle (Recommended)
+
+The `build-app.sh` script builds the executable and packages it as a native macOS .app:
 
 ```bash
-cd ClaudeSpotlight
+./build-app.sh
+```
+
+This creates `.build/ClaudeSpotlight.app` with:
+- Proper .app bundle structure
+- Info.plist configuration
+- Code signing (ad-hoc)
+- Entitlements for security
+- Menu bar integration
+
+### Option 2: Build with Xcode
+
+```bash
+open ClaudeSpotlight.xcodeproj
+# Build and run in Xcode (⌘R)
+```
+
+### Option 3: Command Line Build (executable only)
+
+```bash
 swift build -c release
+# Executable: .build/release/ClaudeSpotlight (or .build/arm64-apple-macosx/release/)
 ```
 
 ## Usage
@@ -138,6 +172,31 @@ ClaudeSpotlight/
 │   └── Info.plist                 # App configuration
 └── README.md
 ```
+
+## 🔒 Security Features
+
+### App Sandbox
+- **Enabled** - Runs in sandboxed environment for enhanced security
+- **Network Access** - Limited to outbound connections for Claude API only
+- **File Access** - User-selected files only (no automatic file access)
+- **No Server** - Does not accept incoming network connections
+
+### Hardened Runtime
+- **JIT Disabled** - No just-in-time compilation allowed
+- **Memory Protection** - Unsigned executable memory blocked
+- **Library Validation** - Only signed libraries can be loaded
+- **Environment Variables** - DYLD variables disabled for security
+
+### Permissions
+- **Minimal Scope** - Only requests necessary permissions
+- **Apple Events** - Required for Terminal command execution
+- **Transparency** - All commands shown before execution
+- **User Control** - Explicit confirmation required for all commands
+
+### Code Signing
+- Ad-hoc signed by default for local development
+- Ready for App Store or Developer ID signing
+- Entitlements properly configured
 
 ## 🏗️ Architecture & Technology
 
