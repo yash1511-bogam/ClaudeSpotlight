@@ -1,0 +1,528 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+env:
+  SWIFT_VERSION: '6.0'
+  APP_NAME: 'ClaudeSpotlight'
+
+jobs:
+  # ─── Change Detection ───────────────────────────────────────
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      swift: ${{ steps.filter.outputs.swift }}
+      website: ${{ steps.filter.outputs.website }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            swift:
+              - 'Sources/**'
+              - 'Package.swift'
+              - 'build-app.sh'
+              - 'ClaudeSpotlight.xcodeproj/**'
+            website:
+              - 'website/**'
+              - 'vercel.json'
+
+  # ─── Swift CI ───────────────────────────────────────────────
+  swift-build:
+    name: Swift Build (SPM + Xcode)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.swift == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+
+      - name: Build with SPM
+        run: |
+          swift --version
+          swift package resolve
+          swift build -v
+          swift build -c release -v
+
+      - name: Build with Xcode
+        run: |
+          xcodebuild clean build \
+            -project ClaudeSpotlight.xcodeproj \
+            -scheme ClaudeSpotlight \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run tests
+        run: swift test --enable-code-coverage
+        continue-on-error: true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spm-build-artifacts
+          path: .build/release/ClaudeSpotlight
+          if-no-files-found: warn
+
+  swift-build-app:
+    name: Build .app Bundle
+    needs: detect-changes
+    if: needs.detect-changes.outputs.swift == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+
+      - name: Build .app bundle
+        run: |
+          chmod +x build-app.sh
+          ./build-app.sh
+
+      - name: Verify .app bundle
+        run: |
+          ls -la .build/ClaudeSpotlight.app
+          ls -la .build/ClaudeSpotlight.app/Contents/MacOS/
+          file .build/ClaudeSpotlight.app/Contents/MacOS/ClaudeSpotlight
+
+      - name: Upload .app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeSpotlight-app
+          path: .build/ClaudeSpotlight.app
+          if-no-files-found: error
+
+  swift-analyze:
+    name: Static Analysis
+    needs: detect-changes
+    if: needs.detect-changes.outputs.swift == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+      - name: Run xcodebuild analyze
+        run: |
+          xcodebuild clean analyze \
+            -project ClaudeSpotlight.xcodeproj \
+            -scheme ClaudeSpotlight \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+        continue-on-error: true
+
+  # ─── PR Checks (Swift) ─────────────────────────────────────
+  pr-validate:
+    name: Validate Pull Request
+    needs: detect-changes
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.swift == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+
+      - name: Check for merge conflicts
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          if git merge-tree $(git merge-base HEAD origin/${{ github.base_ref }}) HEAD origin/${{ github.base_ref }} | grep -q "^<<<<<"; then
+            echo "❌ Merge conflicts detected!"
+            exit 1
+          else
+            echo "✅ No merge conflicts detected"
+          fi
+
+      - name: Validate Swift files
+        run: |
+          echo "Checking Swift syntax..."
+          for file in $(find Sources -name "*.swift"); do
+            echo "Validating $file"
+            swiftc -parse "$file"
+          done
+
+      - name: Check Package.swift
+        run: swift package dump-package
+
+      - name: Check for sensitive data
+        run: |
+          echo "Scanning for potential secrets..."
+          if grep -r -i -E "(api[_-]?key|secret|password|token|credential|auth)" Sources --include="*.swift" | grep -v "// "; then
+            echo "⚠️  Warning: Found potential sensitive data references in code"
+          else
+            echo "✅ No obvious sensitive data patterns found"
+          fi
+        continue-on-error: true
+
+      - name: Check binary size
+        run: |
+          swift build -c release
+          if [ -f ".build/release/ClaudeSpotlight" ]; then
+            EXEC_PATH=".build/release/ClaudeSpotlight"
+          elif [ -f ".build/arm64-apple-macosx/release/ClaudeSpotlight" ]; then
+            EXEC_PATH=".build/arm64-apple-macosx/release/ClaudeSpotlight"
+          else
+            echo "❌ Could not find executable"; exit 1
+          fi
+          SIZE=$(du -h "$EXEC_PATH" | cut -f1)
+          SIZE_BYTES=$(stat -f%z "$EXEC_PATH")
+          SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+          echo "SIZE=$SIZE" >> $GITHUB_ENV
+          echo "SIZE_MB=$SIZE_MB" >> $GITHUB_ENV
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ✅ PR Checks Passed\n\n- ✅ No merge conflicts\n- ✅ Swift syntax validation passed\n- ✅ Package.swift is valid\n- ✅ Build successful\n- 📦 Binary size: ${{ env.SIZE }} (${{ env.SIZE_MB }} MB)`
+            });
+
+  # ─── Website CI ─────────────────────────────────────────────
+  website-build:
+    name: Website Build & Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run ESLint
+        run: bun run lint
+        continue-on-error: true
+
+      - name: Type check
+        run: bunx tsc --noEmit
+        continue-on-error: true
+
+      - name: Build Next.js app
+        run: bun run build
+        env:
+          NODE_ENV: production
+
+      - name: Analyze bundle
+        run: |
+          echo "## Bundle Size Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          du -sh .next/ >> $GITHUB_STEP_SUMMARY
+          find .next/server/pages -name "*.html" -exec du -h {} \; >> $GITHUB_STEP_SUMMARY || true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build
+          path: |
+            website/.next
+            website/public
+          retention-days: 7
+
+  # ─── Swift CD ───────────────────────────────────────────────
+  deploy-dev:
+    name: Deploy Dev Build
+    needs: [detect-changes, swift-build, swift-build-app]
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') &&
+      needs.detect-changes.outputs.swift == 'true' &&
+      !startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+
+      - name: Get commit info
+        id: commit
+        run: |
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "COMMIT_MSG=$(git log -1 --pretty=%B | head -n1)" >> $GITHUB_OUTPUT
+          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Build .app bundle
+        run: |
+          chmod +x build-app.sh
+          ./build-app.sh
+
+      - name: Create archive
+        run: |
+          cd .build
+          zip -r ../ClaudeSpotlight-dev-${{ steps.commit.outputs.SHORT_SHA }}.zip ClaudeSpotlight.app
+
+      - name: Generate build info
+        run: |
+          cat > build-info.txt << EOF
+          ClaudeSpotlight Development Build
+          ==================================
+          Build Date: ${{ steps.commit.outputs.DATE }}
+          Commit: ${{ steps.commit.outputs.SHORT_SHA }}
+          Branch: ${GITHUB_REF#refs/heads/}
+          Message: ${{ steps.commit.outputs.COMMIT_MSG }}
+          Workflow Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+
+      - name: Upload development build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeSpotlight-dev-${{ steps.commit.outputs.SHORT_SHA }}
+          path: |
+            ClaudeSpotlight-dev-${{ steps.commit.outputs.SHORT_SHA }}.zip
+            build-info.txt
+          retention-days: 30
+
+      - name: Create or update development release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-latest
+          name: Development Build (Latest)
+          body: |
+            ## 🚀 Development Build - Latest from ${{ github.ref_name }}
+
+            **Commit:** ${{ steps.commit.outputs.SHORT_SHA }} | **Date:** ${{ steps.commit.outputs.DATE }}
+            **Message:** ${{ steps.commit.outputs.COMMIT_MSG }}
+
+            ⚠️ This is an automated dev build. For stable releases, use tagged versions.
+
+            ### Installation
+            1. Download the zip, extract, move to Applications
+            2. Set `ANTHROPIC_API_KEY` environment variable
+            3. Use **⌘⇧Space** to invoke
+          files: |
+            ClaudeSpotlight-dev-${{ steps.commit.outputs.SHORT_SHA }}.zip
+            build-info.txt
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Website CD ─────────────────────────────────────────────
+  deploy-website-preview:
+    name: Deploy Website Preview
+    needs: [detect-changes, website-build]
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install -g vercel@latest
+      - run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: website
+      - run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: website
+
+      - name: Deploy Preview
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+        working-directory: website
+
+      - name: Comment Preview URL
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🌐 Website Preview\n\n✅ Preview URL: ${{ steps.deploy.outputs.url }}`
+            });
+
+  deploy-website-prod:
+    name: Deploy Website Production
+    needs: [detect-changes, website-build]
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') &&
+      needs.detect-changes.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install -g vercel@latest
+      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: website
+      - run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: website
+
+      - name: Deploy to Production
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+        working-directory: website
+
+      - name: Comment deployment status
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: `## 🎉 Website Live\n\n✅ URL: ${{ steps.deploy.outputs.url }}`
+            });
+
+  # ─── Release ────────────────────────────────────────────────
+  release:
+    name: Build Release
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.0'
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update version in build script
+        run: |
+          VERSION_NUMBER="${{ steps.version.outputs.VERSION }}"
+          VERSION_NUMBER="${VERSION_NUMBER#v}"
+          echo "Building version: $VERSION_NUMBER"
+          sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>.*<\/string>/<string>$VERSION_NUMBER<\/string>/;}" build-app.sh
+
+      - name: Build .app bundle
+        run: |
+          chmod +x build-app.sh
+          ./build-app.sh
+
+      - name: Create DMG
+        run: |
+          mkdir -p dmg-temp
+          cp -r .build/ClaudeSpotlight.app dmg-temp/
+          ln -s /Applications dmg-temp/Applications
+          hdiutil create -volname "ClaudeSpotlight" \
+            -srcfolder dmg-temp -ov -format UDZO \
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg
+
+      - name: Create ZIP
+        run: |
+          cd .build
+          zip -r ../ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip ClaudeSpotlight.app
+
+      - name: Generate checksums
+        run: |
+          shasum -a 256 ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg > checksums.txt
+          shasum -a 256 ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip >> checksums.txt
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip
+            checksums.txt
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.dmg
+            ClaudeSpotlight-${{ steps.version.outputs.VERSION }}.zip
+            checksums.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## ClaudeSpotlight ${{ steps.version.outputs.VERSION }}
+
+            **DMG (Recommended):** Download, open, drag to Applications.
+            **ZIP:** Download, extract, move to Applications.
+
+            ### Setup
+            ```bash
+            export ANTHROPIC_API_KEY="your-key"
+            ```
+            Use **⌘⇧Space** to invoke. Requires macOS 15.0+.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Failure Notification ───────────────────────────────────
+  notify-failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-dev, deploy-website-prod, deploy-website-preview]
+    if: always() && contains(needs.*.result, 'failure')
+    steps:
+      - name: Create failure issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Deployment Failed - ${context.sha.substring(0, 7)}`,
+              body: `## ❌ Deployment Failed\n\n**Run:** https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n**Commit:** ${context.sha.substring(0, 7)}\n**Branch:** ${context.ref.replace('refs/heads/', '')}\n\nCheck workflow logs for details.`,
+              labels: ['bug', 'deployment', 'automated']
+            });
