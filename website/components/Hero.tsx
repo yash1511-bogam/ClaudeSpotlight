@@ -2,6 +2,7 @@
 
 import { Button } from "./ui/button"
 import { Download, Command } from "lucide-react"
+import { handleDownload } from "../lib/download"
 
 export default function Hero() {
   return (
@@ -25,18 +26,20 @@ export default function Hero() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4 px-4">
-          <Button size="lg" className="bg-white text-black hover:bg-gray-200 text-sm md:text-base lg:text-lg px-6 md:px-8 w-full sm:w-auto">
+          <Button onClick={handleDownload} size="lg" className="bg-white text-black hover:bg-gray-200 text-sm md:text-base lg:text-lg px-6 md:px-8 w-full sm:w-auto">
             <Download className="w-4 h-4 md:w-5 md:h-5 mr-2" />
             Download for macOS
           </Button>
-          <Button 
-            size="lg" 
-            variant="outline" 
-            className="border-white/20 text-white hover:bg-white/10 text-sm md:text-base lg:text-lg px-6 md:px-8 w-full sm:w-auto"
-          >
-            <Command className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-            View on GitHub
-          </Button>
+          <a href="https://github.com/yash1511-bogam/ClaudeSpotlight" target="_blank" rel="noopener noreferrer">
+            <Button 
+              size="lg" 
+              variant="outline" 
+              className="border-white/20 text-white hover:bg-white/10 text-sm md:text-base lg:text-lg px-6 md:px-8 w-full sm:w-auto"
+            >
+              <Command className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+              View on GitHub
+            </Button>
+          </a>
         </div>
 
         <div className="mt-10 md:mt-16 relative px-2">
