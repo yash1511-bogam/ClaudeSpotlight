@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "cd website && npm install && npm run build",
-  "devCommand": "cd website && npm run dev",
-  "installCommand": "cd website && npm install",
+  "buildCommand": "cd website && bun run build",
+  "devCommand": "cd website && bun run dev",
+  "installCommand": "cd website && bun install",
   "framework": "nextjs",
   "outputDirectory": "website/.next",
   "ignoreCommand": "git diff --quiet HEAD^ HEAD ./website",
