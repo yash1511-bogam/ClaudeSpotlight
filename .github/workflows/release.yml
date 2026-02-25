@@ -45,8 +45,8 @@ jobs:
           VERSION_NUMBER="${VERSION#v}"
           echo "Building version: $VERSION_NUMBER"
           
-          # Update build-app.sh to use the correct version
-          sed -i '' "s/CFBundleShortVersionString>.*</CFBundleShortVersionString>$VERSION_NUMBER</" build-app.sh
+          # Update the version string in build-app.sh heredoc
+          sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>.*<\/string>/<string>$VERSION_NUMBER<\/string>/;}" build-app.sh
       
       - name: Build .app bundle
         run: |

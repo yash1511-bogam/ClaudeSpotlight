@@ -40,7 +40,7 @@ jobs:
           echo "Checking Swift syntax..."
           for file in $(find Sources -name "*.swift"); do
             echo "Validating $file"
-            swift -frontend -parse "$file" -verify
+            swiftc -parse "$file"
           done
       
       - name: Check Package.swift
